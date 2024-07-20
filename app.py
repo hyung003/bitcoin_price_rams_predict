@@ -94,7 +94,7 @@ def get_bitcoin_price():
 
 def fetch_historical_bitcoin_data():
     end_date = datetime.now()
-    start_date = datetime(2024, 7, 16)
+    start_date = end_date - timedelta(days=365)
     url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from={int(start_date.timestamp())}&to={int(end_date.timestamp())}"
     try:
         response = requests.get(url)
@@ -112,7 +112,9 @@ def fetch_historical_bitcoin_data():
 def fetch_historical_bitcoin_data_backup():
     try:
         ticker = yf.Ticker("BTC-USD")
-        data = ticker.history(start="2024-07-16", end=datetime.now().strftime('%Y-%m-%d'))
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        data = ticker.history(start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))
         if not data.empty:
             df = data.reset_index()[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'price'})
             return df
@@ -201,6 +203,7 @@ if current_price is not None:
 
     st.subheader("Historical Bitcoin Prices with Predictions")
     historical_data, is_fresh = get_historical_bitcoin_data()
+    
     if historical_data is not None:
         fig = go.Figure()
 
@@ -217,7 +220,7 @@ if current_price is not None:
         if current_price is not None:
             for name, prediction in predictions.items():
                 fig.add_trace(go.Scatter(
-                    x=[historical_data['date'].iloc[-1] - timedelta(days=365), historical_data['date'].iloc[-1]],
+                    x=[historical_data['date'].min(), historical_data['date'].max()],
                     y=[prediction, prediction],
                     mode='lines',
                     name=f'{name} Prediction',
@@ -262,15 +265,16 @@ if current_price is not None:
     # Calculate daily rankings and create bump chart data
     bump_chart_data = []
     for date, group in historical_data.groupby('date'):
-        daily_price = group['price'].values[0]
-        daily_rankings = []
-        for name, prediction in predictions.items():
-            rmse = calculate_rmse(daily_price, prediction)
-            daily_rankings.append({"Name": name, "RMSE": rmse})
-        daily_rankings_df = pd.DataFrame(daily_rankings).sort_values('RMSE')
-        daily_rankings_df['Rank'] = range(1, len(daily_rankings_df) + 1)
-        for index, row in daily_rankings_df.iterrows():
-            bump_chart_data.append({'Date': date, 'Name': row['Name'], 'Rank': row['Rank']})
+        if date >= datetime(2024, 7, 16):
+            daily_price = group['price'].values[0]
+            daily_rankings = []
+            for name, prediction in predictions.items():
+                rmse = calculate_rmse(daily_price, prediction)
+                daily_rankings.append({"Name": name, "RMSE": rmse})
+            daily_rankings_df = pd.DataFrame(daily_rankings).sort_values('RMSE')
+            daily_rankings_df['Rank'] = range(1, len(daily_rankings_df) + 1)
+            for index, row in daily_rankings_df.iterrows():
+                bump_chart_data.append({'Date': date, 'Name': row['Name'], 'Rank': row['Rank']})
 
     bump_df = pd.DataFrame(bump_chart_data)
 
@@ -278,7 +282,7 @@ if current_price is not None:
     fig_bump = px.line(bump_df, x='Date', y='Rank', color='Name', markers=True)
     fig_bump.update_layout(
         yaxis=dict(autorange='reversed'),  # Invert y-axis to have rank 1 at the top
-        title="Rank Changes Over Time (by day)",
+        title="Rank Changes Over Time",
         xaxis_title="Date",
         yaxis_title="Rank",
         template='plotly_white',
