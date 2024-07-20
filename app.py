@@ -1,10 +1,11 @@
 import streamlit as st
 import requests
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import time
-import yfinance as yf  # Ensure you have the yfinance library installed
+import yfinance as yf
 
 # Set page config
 st.set_page_config(page_title="Bitcoin Price Prediction", layout="wide", page_icon="💰", initial_sidebar_state="collapsed")
@@ -93,7 +94,7 @@ def get_bitcoin_price():
 
 def fetch_historical_bitcoin_data():
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
+    start_date = datetime(2024, 7, 16)
     url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from={int(start_date.timestamp())}&to={int(end_date.timestamp())}"
     try:
         response = requests.get(url)
@@ -101,7 +102,7 @@ def fetch_historical_bitcoin_data():
         data = response.json()
         if "prices" in data:
             df = pd.DataFrame(data['prices'], columns=['timestamp', 'price'])
-            df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df['date'] = pd.to_datetime(df['timestamp'], unit='ms').dt.floor('d')
             return df
         else:
             return None
@@ -111,7 +112,7 @@ def fetch_historical_bitcoin_data():
 def fetch_historical_bitcoin_data_backup():
     try:
         ticker = yf.Ticker("BTC-USD")
-        data = ticker.history(period="1y")
+        data = ticker.history(start="2024-07-16", end=datetime.now().strftime('%Y-%m-%d'))
         if not data.empty:
             df = data.reset_index()[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'price'})
             return df
@@ -257,3 +258,33 @@ if current_price is not None:
             st.write(f"Using cached data. Last successful fetch: {st.session_state.last_successful_fetch}")
     else:
         st.warning("Unable to fetch historical Bitcoin data. No cached data available.")
+
+    # Calculate daily rankings and create bump chart data
+    bump_chart_data = []
+    for date, group in historical_data.groupby('date'):
+        daily_price = group['price'].values[0]
+        daily_rankings = []
+        for name, prediction in predictions.items():
+            rmse = calculate_rmse(daily_price, prediction)
+            daily_rankings.append({"Name": name, "RMSE": rmse})
+        daily_rankings_df = pd.DataFrame(daily_rankings).sort_values('RMSE')
+        daily_rankings_df['Rank'] = range(1, len(daily_rankings_df) + 1)
+        for index, row in daily_rankings_df.iterrows():
+            bump_chart_data.append({'Date': date, 'Name': row['Name'], 'Rank': row['Rank']})
+
+    bump_df = pd.DataFrame(bump_chart_data)
+
+    # Create the bump chart
+    fig_bump = px.line(bump_df, x='Date', y='Rank', color='Name', markers=True)
+    fig_bump.update_layout(
+        yaxis=dict(autorange='reversed'),  # Invert y-axis to have rank 1 at the top
+        title="Rank Changes Over Time (by day)",
+        xaxis_title="Date",
+        yaxis_title="Rank",
+        template='plotly_white',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        font=dict(color='#000000')
+    )
+
+    st.plotly_chart(fig_bump, use_container_width=True)
