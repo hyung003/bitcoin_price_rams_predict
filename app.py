@@ -102,7 +102,7 @@ def fetch_historical_bitcoin_data():
         data = response.json()
         if "prices" in data:
             df = pd.DataFrame(data['prices'], columns=['timestamp', 'price'])
-            df['date'] = pd.to_datetime(df['timestamp'], unit='ms').dt.floor('d')
+            df['date'] = pd.to_datetime(df['timestamp'], unit='ms').dt.tz_localize(None)  # Convert to timezone-naive
             return df
         else:
             return None
@@ -117,6 +117,7 @@ def fetch_historical_bitcoin_data_backup():
         data = ticker.history(start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))
         if not data.empty:
             df = data.reset_index()[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'price'})
+            df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)  # Convert to timezone-naive
             return df
         else:
             return None
@@ -264,8 +265,10 @@ if current_price is not None:
 
     # Calculate daily rankings and create bump chart data
     bump_chart_data = []
+    start_date = datetime(2024, 7, 16)  # Ensure this is timezone-naive
     for date, group in historical_data.groupby('date'):
-        if date >= datetime(2024, 7, 16):
+        date = date.tz_localize(None)  # Convert to timezone-naive
+        if date >= start_date:
             daily_price = group['price'].values[0]
             daily_rankings = []
             for name, prediction in predictions.items():
